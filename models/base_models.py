@@ -1,11 +1,65 @@
+# -*- coding: utf-8 -*-
+
+"""
+Base REST Adapter
+=================
+
+This module extends Odoo's base model to provide:
+
+1) _from_dict()
+   Convert JSON-like dict into ORM-compatible values.
+
+2) _to_dict()
+   Convert recordset into structured API response.
+
+3) Generic CRUD helpers:
+   - _create_new_record
+   - _update_existing_record
+   - _api_search_all
+   - _api_search_one
+   - _api_delete_one
+   - _api_filter_with_keywords
+
+Architecture Role:
+------------------
+This layer acts as a serializer/deserializer bridge between:
+    External API <-> Odoo ORM
+
+Design Principles:
+------------------
+- Safe relational resolution
+- Safe attachment handling
+- Infinite recursion prevention
+- Field type normalization
+- Chatter suppression
+"""
+
+# ---------------------------------------------------------
+# Standard Libraries
+# ---------------------------------------------------------
 import base64
 import json as pyjson
+import re
+from datetime import datetime
+
+# ---------------------------------------------------------
+# Odoo Imports
+# ---------------------------------------------------------
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
-from datetime import datetime
-import re
 
 def html_to_text(html_code):
+    """
+    Remove HTML tags from string.
+
+    Used when serializing html fields to return clean text.
+
+    Note:
+    -----
+    This is simple regex-based stripping.
+    For advanced sanitization consider using:
+        markupsafe / bleach
+    """
     if not html_code:
         return ''
     return re.sub(r'<[^>]+>', '', html_code)
@@ -13,6 +67,10 @@ def html_to_text(html_code):
 
 class Base(models.AbstractModel):
     _inherit = 'base'
+
+    # == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==
+    # 🔁 JSON → ORM(Deserializer)
+    # == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==
 
     @api.model
     def _from_dict(self, data):
@@ -210,6 +268,10 @@ class Base(models.AbstractModel):
             "activity_calendar_event_id","activity_type_icon","Record_count","create_date","create_uid","write_date","write_uid"
         }
 
+    # == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==
+    # 🔁 ORM → JSON(Serializer)
+    # == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==
+
     def _to_dict(self, list_of_fields=None, recurse_many2one=True, skip_chatter=True, memo=None):
         if memo is None:
             memo = set()
@@ -318,6 +380,10 @@ class Base(models.AbstractModel):
         ordered_res.update(res)
 
         return ordered_res
+
+    # == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==
+    # 🧱 CRUD HELPERS
+    # == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==
 
     @api.model
     def _create_new_record(self, data, list_of_fields=None):
