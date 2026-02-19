@@ -368,41 +368,14 @@ class Base(models.AbstractModel):
 
     @api.model
     def _get_all_filter_conditions(self, keyword):
-        return []
+        return [('name', 'like', keyword)]
 
     @api.model
-    def _api_filter_with_keywords(self, keyword, list_of_fields=None):
-        if not keyword:
-            return []
-
-        conditions = self._get_all_filter_conditions(keyword)
-        domain = ['|'] * (len(conditions) - 1) + conditions
-        records = self.search(domain)
+    def _api_filter_with_keywords(self, domain=None, keyword=None, list_of_fields=None):
+        if keyword:
+            conditions = self._get_all_filter_conditions(keyword)
+            filter_domain = ['|'] * (len(conditions) - 1) + conditions
+        else:
+            filter_domain = domain or []
+        records = self.search(filter_domain)
         return [rec._to_dict(list_of_fields=list_of_fields) for rec in records]
-
-    @api.model
-    def _mapping_all_model_actions(self, obj):
-        return {}
-
-    @api.model
-    def _execute_action(self, record_id, action_name):
-        record = self.sudo().browse(record_id)
-        if not record.exists():
-            return {'error': True, 'message': f"Record record {record_id} not found"}
-
-        action_map = self._mapping_all_model_actions(record)
-
-        method = action_map.get(action_name)
-        if not method:
-            return {'error': True, 'message': f"Invalid action '{action_name}'"}
-
-        result = method()
-        response = {
-            'error': False,
-            'record_id': record.id,
-            'action': action_name,
-            'message': f"Action '{action_name}' executed successfully"
-        }
-        if result:
-            response.update({"action_result": result})
-        return response

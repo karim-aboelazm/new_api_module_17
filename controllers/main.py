@@ -1,64 +1,17 @@
 # -*- coding: utf-8 -*-
 # ----------------------------
-"""
-
-Api ----->
-----------------------
-1) From Odoo To Others
-----------------------
--> http
-    -> request -> Used for generate odoo env
-               -> request.env.user.id
-               -> request.env['res.users']
-
-    -> route   -> route [url]
-               -> auth [public, user, none]
-               -> type [http,json]
-               -> method [GET, POST, PUT, DELETE]
-                    ** GET --> retreive data from Odoo
-                    ** POST --> create new record in Odoo or run actions or methods
-                    ** PUT --> update record in Odoo
-                    ** DELETE --> delete record in Odoo
-               -> save_session = False
-               -> cros = "*"
-
-    -> Controller -> base controller Class
-
-    -> JWT (JSON Web Token)
-
-class TestOdooApi(http.Controller):
-
-    @http.route("/api/v1/get_all_users", type="http", auth="user",method=['GET'], csrf=False, save_session=False,cors="*")
-    def get_all_users(self,*args,**kwargs):
-        all_users = request.env['res.users'].search([])
-        return all_users
-
-
-2. Check Token, responses, error handel
-------------------------------------------
-
-3. prepare base model for api
-----------------------------------
-1) from_dict   --> cleaning and prepareing data which come from users in api and gegenrate recordset values
-2) to_dict     --> give me output standard for record as json
-3) create , update , search , delete , run proccess ....
-
-
-2) From Other To Odoo
-----------------------
-
-"""
-
+# From Odoo --> Other
+# ----------------------------
 import json
 from odoo import http
 from odoo.http import request, route, Response
-from odoo.exceptions import ValidationError
+from odoo.exceptions import ValidationError,AccessError
 from .utils import *
 
 class OdooApi(http.Controller):
 
     @route("/api/v1/login",**route_options('post'))
-    def generate_new_access_token(self):
+    def _authentication(self):
         data, error = get_json_body()
         if error:
             return invalid_response(message=error)
@@ -88,23 +41,132 @@ class OdooApi(http.Controller):
             content_type='application/json'
         )
 
-    @route(model_api_urls('users'),**route_options('get'))
-    @check_api_token()
-    def get_all_users(self,user_id=None,query=None):
+    @route("/api/v1/chanage_password",**route_options('post'))
+    def _chanage_password(self):
         data, error = get_json_body()
         if error:
             return invalid_response(message=error)
-        domain = data.get('domain',[])
-        limit = data.get('limit',100)
-        fields = data.get('fields',[])
-        all_users = request.env['res.users']._api_search_all(domain=domain,limit=limit,list_of_fields=fields)
-        return valid_response(body=all_users,message="User Retreive Successfully")
+        old_password = data.get('old_password')
+        new_password = data.get('new_password')
 
-    @route(model_api_urls('partner'),**route_options('post'))
-    @check_api_token()
-    def create_new_partner(self):
+        if not old_password and not new_password:
+            return invalid_response(message="Old password or new password is required")
+
+        if old_password == new_password:
+            return invalid_response(message="Old password and new password are equal")
+
+        current_user = request.env.user
+        try:
+            user_info = request.session.authenticate(request.db, current_user.login, old_password)
+        except Exception as e:
+            return handel_odoo_api_errors(str(e))
+
+        current_user.sudo().write({'password': new_password})
+        return valid_response(message="Password Changed Successfully")
+
+    @route('/api/v1/<string:model_name>/create',**route_options('post'))
+    def _create_new_records(self,model_name,**kwargs):
         data, error = get_json_body()
         if error:
             return invalid_response(message=error)
-        partner = request.env['res.partner']._create_new_record(data,list_of_fields=data.get('fields',[]))
-        return valid_response(body=partner,message="Partner Created Successfully")
+        display_fields = data.pop('list_of_fields',None)
+        resposnse = request.env[model_name].sudo()._create_new_record(data,list_of_fields=display_fields)
+        return valid_response(message="New record created successfully",body=resposnse)
+
+    @route('/api/v1/<string:model_name>/update', **route_options('put'))
+    def _update_existing_records(self,model_name,**kwargs):
+        data, error = get_json_body()
+        if error:
+            return invalid_response(message=error)
+        display_fields = data.pop('list_of_fields', None)
+        resposnse = request.env[model_name].sudo()._update_existing_record(data,list_of_fields=display_fields)
+        return valid_response(message="Existing record updated successfully", body=resposnse)
+
+    @route('/api/v1/<string:model_name>/delete/<int:record_id>', **route_options('delete'))
+    def _delete_existing_records(self,model_name,record_id,**kwargs):
+        if not record_id:
+            return invalid_response(message="Record id is required")
+        resposnse = request.env[model_name].sudo()._api_delete_one(record_id)
+        return valid_response(message="Record deleted successfully", body=resposnse)
+
+    @route('/api/v1/<string:model_name>/search/all', **route_options('get'))
+    def _get_all_records(self,model_name,**kwargs):
+        data, error = get_json_body()
+        if error:
+            return invalid_response(message=error)
+        resposnse = request.env[model_name].sudo()._api_search_all(
+            data.get('domain',[]),
+            data.get('limit',100),
+            data.get('offset',0),
+            data.get('list_of_fields')
+        )
+        return valid_response(message="All records retrieved successfully",body=resposnse)
+
+    @route('/api/v1/<string:model_name>/search/one/<int:record_id>', **route_options('get'))
+    def _get_one_record(self,model_name,record_id,**kwargs):
+        data, error = get_json_body()
+        if error:
+            return invalid_response(message=error)
+        if not record_id:
+            return invalid_response(message="Record id is required")
+        resposnse = request.env[model_name].sudo()._api_search_one(record_id,data.get('list_of_fields'))
+        return valid_response(message="Record found successfully",body=resposnse)
+
+    @route('/api/v1/<string:model_name>/filter', **route_options('get'))
+    def _get_records_filters(self,model_name,**kwargs):
+        data, error = get_json_body()
+        if error:
+            return invalid_response(message=error)
+        key = kwargs.get('query')
+        domain = data.get('domain')
+        resposnse = request.env[model_name].sudo()._api_filter_with_keywords(domain,key,data.get('list_of_fields'))
+        return valid_response(message="Record filtered successfully",body=resposnse)
+
+    @route('/api/v1/<string:model_name>/action/<int:record_id>', **route_options('post'))
+    def run_action_on_record(self, model_name, record_id):
+        try:
+            data, error = get_json_body()
+            if error:
+                return invalid_response(message=error)
+            action_name = data.get('action_name')
+
+            if not action_name:
+                return invalid_response("Missing action_name")
+
+            # Validate model existence
+            if model_name not in request.env:
+                return invalid_response("Invalid model")
+
+            record = request.env[model_name].sudo().browse(record_id)
+
+            if not record.exists():
+                return invalid_response("Record not found")
+
+            # Validate action exists
+            if not hasattr(record, action_name):
+                return invalid_response("Invalid action")
+
+            method = getattr(record, action_name)
+
+            if not callable(method):
+                return invalid_response("Action is not callable")
+
+            result = method()
+            response = {
+                'error': False,
+                'record_id': record.id,
+                'action': action_name,
+                'message': f"Action '{action_name}' executed successfully"
+            }
+            if result:
+                response.update({"action_result": result})
+
+            return valid_response(
+                message="Action executed successfully",
+                body=response
+            )
+
+        except AccessError:
+            return invalid_response("Access denied")
+        except Exception:
+            return invalid_response("Unexpected server error")

@@ -179,15 +179,16 @@ def route_options(method):
     }
     return route_options[method.upper()]
 
+# sale_order
 def model_api_urls(prefix):
     return {
-        f'{prefix}_get_all': f'/api/v1/{prefix}/search/all',
-        f'{prefix}_get_one': f'/api/v1/{prefix}/search/one/<int:record_id>',
-        f'{prefix}_filter':  f'/api/v1/{prefix}/filter',
-        f'{prefix}_create':  f'/api/v1/{prefix}/create',
-        f'{prefix}_update':  f'/api/v1/{prefix}/update/<int:record_id>',
-        f'{prefix}_delete':  f'/api/v1/{prefix}/delete/<int:record_id>',
-        f'{prefix}_action':  f'/api/v1/{prefix}/action/<int:record_id>',
+        f'{prefix.replace('.','_')}_get_all': f'/api/v1/{prefix}/search/all',
+        f'{prefix.replace('.','_')}_get_one': f'/api/v1/{prefix}/search/one/<int:record_id>',
+        f'{prefix.replace('.','_')}_filter':  f'/api/v1/{prefix}/filter',
+        f'{prefix.replace('.','_')}_create':  f'/api/v1/{prefix}/create',
+        f'{prefix.replace('.','_')}_update':  f'/api/v1/{prefix}/update/<int:record_id>',
+        f'{prefix.replace('.','_')}_delete':  f'/api/v1/{prefix}/delete/<int:record_id>',
+        f'{prefix.replace('.','_')}_action':  f'/api/v1/{prefix}/action/<int:record_id>',
     }
 
 def get_json_body():
